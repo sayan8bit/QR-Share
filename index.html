@@ -22,16 +22,17 @@
       #reader {
         width: 300px;
         margin: auto;
+        display: none;
       }
     </style>
   </head>
   <body>
-    <h2>📁 QR File Transfer</h2>
-    <button onclick="uploadFile()">📤 Upload & Generate QR</button>
+    <h2>📁 QR File Share (Small Files Only)</h2>
+    <button onclick="uploadFile()">📤 Upload File → QR</button>
     <button onclick="startScanner()">📷 Scan QR to Download</button>
     <br /><br />
     <canvas id="qrCanvas"></canvas>
-    <div id="reader" style="display: none"></div>
+    <div id="reader"></div>
 
     <script>
       const qrCanvas = document.getElementById("qrCanvas");
@@ -46,18 +47,25 @@
 
           const reader = new FileReader();
           reader.onload = function (evt) {
-            const fileData = evt.target.result;
-            const id = "file_" + Date.now();
-            const expiry = Date.now() + 5 * 60 * 1000; // 5 mins
+            const fileData = evt.target.result; // base64 data
+            const meta = {
+              name: file.name,
+              type: file.type,
+              data: fileData,
+            };
+            const encoded = JSON.stringify(meta);
 
-            localStorage.setItem(
-              id,
-              JSON.stringify({ fileData, fileName: file.name, expiry })
-            );
+            if (encoded.length > 2500) {
+              alert(
+                "❌ File too large for QR code. Please upload a smaller file."
+              );
+              return;
+            }
 
-            const downloadURL = `${location.origin}${location.pathname}?id=${id}`;
-            QRCode.toCanvas(qrCanvas, downloadURL);
-            alert("✅ QR Code generated. Valid for 5 minutes.");
+            QRCode.toCanvas(qrCanvas, encoded, (err) => {
+              if (err) console.error(err);
+              else alert("✅ QR code generated! Scan to download.");
+            });
           };
           reader.readAsDataURL(file);
         };
@@ -67,50 +75,38 @@
       function startScanner() {
         reader.style.display = "block";
         qrCanvas.style.display = "none";
+
         const html5QrCode = new Html5Qrcode("reader");
 
         Html5Qrcode.getCameras()
           .then((cameras) => {
-            if (cameras && cameras.length) {
-              html5QrCode.start(
-                cameras[0].id,
-                { fps: 10, qrbox: 250 },
-                (decodedText) => {
-                  html5QrCode.stop().then(() => {
-                    window.location.href = decodedText;
-                  });
-                },
-                (errorMsg) => {}
-              );
-            }
+            const rearCam =
+              cameras.find(
+                (cam) =>
+                  cam.label.toLowerCase().includes("back") ||
+                  cam.label.toLowerCase().includes("rear")
+              ) || cameras[0];
+
+            html5QrCode.start(
+              rearCam.id,
+              { fps: 10, qrbox: 250 },
+              (decodedText) => {
+                html5QrCode.stop().then(() => {
+                  const meta = JSON.parse(decodedText);
+                  const link = document.createElement("a");
+                  link.href = meta.data;
+                  link.download = meta.name;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                });
+              },
+              (errorMsg) => {}
+            );
           })
-          .catch((err) => alert("Camera access denied"));
+          .catch((err) => alert("Camera access denied or not found"));
       }
-
-      // Auto download if ?id=... in URL
-      window.onload = () => {
-        const params = new URLSearchParams(window.location.search);
-        const id = params.get("id");
-        if (id) {
-          const data = localStorage.getItem(id);
-          if (!data) return alert("❌ File expired or not found");
-
-          const { fileData, fileName, expiry } = JSON.parse(data);
-          if (Date.now() > expiry) {
-            localStorage.removeItem(id);
-            return alert("❌ File has expired");
-          }
-
-          const link = document.createElement("a");
-          link.href = fileData;
-          link.download = fileName;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-
-          localStorage.removeItem(id); // auto delete after 1 view
-        }
-      };
     </script>
   </body>
 </html>
+<!-- v1 -->
