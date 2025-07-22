@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>QR P2P File Transfer</title>
+    <title>QR File Share</title>
     <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -27,13 +28,86 @@
     </style>
   </head>
   <body>
-    <h2>📁 P2P File Transfer via QR</h2>
-    <button onclick="startSender()">📤 Upload & Share</button>
-    <button onclick="startReceiver()">📥 Scan QR & Receive</button>
+    <h2>📁 QR File Share (Small Files Only)</h2>
+    <button onclick="uploadFile()">📤 Upload File → QR</button>
+    <button onclick="startScanner()">📷 Scan QR to Download</button>
     <br /><br />
     <canvas id="qrCanvas"></canvas>
     <div id="reader"></div>
 
-    <script src="transfer.js"></script>
+    <script>
+      const qrCanvas = document.getElementById("qrCanvas");
+      const reader = document.getElementById("reader");
+
+      function uploadFile() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = function (evt) {
+            const fileData = evt.target.result; // base64 data
+            const meta = {
+              name: file.name,
+              type: file.type,
+              data: fileData,
+            };
+            const encoded = JSON.stringify(meta);
+
+            if (encoded.length > 2500) {
+              alert(
+                "❌ File too large for QR code. Please upload a smaller file."
+              );
+              return;
+            }
+
+            QRCode.toCanvas(qrCanvas, encoded, (err) => {
+              if (err) console.error(err);
+              else alert("✅ QR code generated! Scan to download.");
+            });
+          };
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      }
+
+      function startScanner() {
+        reader.style.display = "block";
+        qrCanvas.style.display = "none";
+
+        const html5QrCode = new Html5Qrcode("reader");
+
+        Html5Qrcode.getCameras()
+          .then((cameras) => {
+            const rearCam =
+              cameras.find(
+                (cam) =>
+                  cam.label.toLowerCase().includes("back") ||
+                  cam.label.toLowerCase().includes("rear")
+              ) || cameras[0];
+
+            html5QrCode.start(
+              rearCam.id,
+              { fps: 10, qrbox: 250 },
+              (decodedText) => {
+                html5QrCode.stop().then(() => {
+                  const meta = JSON.parse(decodedText);
+                  const link = document.createElement("a");
+                  link.href = meta.data;
+                  link.download = meta.name;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                });
+              },
+              (errorMsg) => {}
+            );
+          })
+          .catch((err) => alert("Camera access denied or not found"));
+      }
+    </script>
   </body>
 </html>
+<!-- v1 -->
