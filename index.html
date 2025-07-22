@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>QR File Share</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        text-align: center;
+        margin-top: 40px;
+      }
+      button {
+        margin: 10px;
+        padding: 10px 20px;
+        font-size: 18px;
+      }
+      #qrCanvas {
+        margin: 20px auto;
+      }
+      #reader {
+        width: 300px;
+        margin: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>📁 QR File Transfer</h2>
+    <button onclick="uploadFile()">📤 Upload & Generate QR</button>
+    <button onclick="startScanner()">📷 Scan QR to Download</button>
+    <br /><br />
+    <canvas id="qrCanvas"></canvas>
+    <div id="reader" style="display: none"></div>
+
+    <script>
+      const qrCanvas = document.getElementById("qrCanvas");
+      const reader = document.getElementById("reader");
+
+      function uploadFile() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const reader = new FileReader();
+          reader.onload = function (evt) {
+            const fileData = evt.target.result;
+            const id = "file_" + Date.now();
+            const expiry = Date.now() + 5 * 60 * 1000; // 5 mins
+
+            localStorage.setItem(
+              id,
+              JSON.stringify({ fileData, fileName: file.name, expiry })
+            );
+
+            const downloadURL = `${location.origin}${location.pathname}?id=${id}`;
+            QRCode.toCanvas(qrCanvas, downloadURL);
+            alert("✅ QR Code generated. Valid for 5 minutes.");
+          };
+          reader.readAsDataURL(file);
+        };
+        input.click();
+      }
+
+      function startScanner() {
+        reader.style.display = "block";
+        qrCanvas.style.display = "none";
+        const html5QrCode = new Html5Qrcode("reader");
+
+        Html5Qrcode.getCameras()
+          .then((cameras) => {
+            if (cameras && cameras.length) {
+              html5QrCode.start(
+                cameras[0].id,
+                { fps: 10, qrbox: 250 },
+                (decodedText) => {
+                  html5QrCode.stop().then(() => {
+                    window.location.href = decodedText;
+                  });
+                },
+                (errorMsg) => {}
+              );
+            }
+          })
+          .catch((err) => alert("Camera access denied"));
+      }
+
+      // Auto download if ?id=... in URL
+      window.onload = () => {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get("id");
+        if (id) {
+          const data = localStorage.getItem(id);
+          if (!data) return alert("❌ File expired or not found");
+
+          const { fileData, fileName, expiry } = JSON.parse(data);
+          if (Date.now() > expiry) {
+            localStorage.removeItem(id);
+            return alert("❌ File has expired");
+          }
+
+          const link = document.createElement("a");
+          link.href = fileData;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          localStorage.removeItem(id); // auto delete after 1 view
+        }
+      };
+    </script>
+  </body>
+</html>
